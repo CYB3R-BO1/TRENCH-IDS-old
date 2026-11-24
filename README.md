@@ -1,192 +1,116 @@
-# TRENCH-IDS: Transferable representation learning for continual heterogeneous graph-based IDS
+# TRENCH-IDS
 
-> Transferable REpresentatioN learning for Continual Heterogeneous graph-based IDS.
+**Transferable representation learning for continual heterogeneous graph-based intrusion detection.**
 
-**Status:** Benchmark frozen 2026-09-07. Headline: 3-layer residual HeteroGNN + replay, forgetting = 0.081 ± 0.008, final accuracy = 0.902 ± 0.005 (3 seeds). The full ablation across TCTRL, RFR, and FACT showed no forward-compatibility mechanism improved upon the replay baseline. See `project-metrics.md`.
+TRENCH-IDS is a reproducible continual-learning benchmark for network intrusion detection using heterogeneous graphs. The benchmark evaluates catastrophic forgetting, replay, parameter regularization, distillation, architectural depth, and cross-dataset generalization across six sequential tasks and ten attack classes.
 
-## Summary
+## Research snapshot
 
-This project builds a continual-learning benchmark for network intrusion detection using heterogeneous graphs, and evaluates forgetting-mitigation methods on it.
+The benchmark was frozen on 2026-09-07. Its canonical result is the three-seed mean for a three-layer residual heterogeneous GNN with experience replay:
 
-**Key result:** A corrected 3-layer relation-specific heterogeneous GNN with residual connections + experience replay reduces catastrophic forgetting to **0.081 ± 0.008** (final accuracy **0.902 ± 0.005**), consistently beating a strong non-graph Flat+Host baseline (**0.105 ± 0.017** forgetting, **0.872 ± 0.016** accuracy) across all 3 seeds.
+| Metric | Result |
+|---|---:|
+| Final accuracy | **0.902 Â± 0.005** |
+| Catastrophic forgetting | **0.081 Â± 0.008** |
+| Seeds | 42, 1, 2 |
 
-The original 1-layer GNN had **40.9% of its parameters unreachable** from the classification loss (6 non-Flow relations + 4 fusion modules), which distorted earlier conclusions. With residual connections enabling depth, the full relational architecture participates and outperforms the non-message-passing baseline.
+The same evaluation reported a Flat+Host replay baseline of **0.872 Â± 0.016** final accuracy and **0.105 Â± 0.017** forgetting. Results, ablations, and caveats are documented in [project-metrics.md](project-metrics.md) and [docs/results_final.md](docs/results_final.md).
 
-## Canonical baseline
+These numbers should be read with the documented limitations: cross-dataset generalization remained poor, and several forward-compatibility mechanisms did not improve on replay.
 
-The headline scientific result is the **3-seed mean** of the 3-layer residual HeteroGNN + replay configuration:
+## What the benchmark found
 
-> **Forgetting = 0.081 ± 0.008, Final accuracy = 0.902 ± 0.005**
-> (seeds 42 / 1 / 2; see `runs/gnn_3layer_residual_s{42,1,2}/summary.json`)
+- A one-layer GNN left 40.9% of model parameters unreachable from the classification loss.
+- Residual connections enabled deeper relation-specific message passing.
+- Replay outperformed the evaluated EWC and distillation configurations.
+- The corrected three-layer graph model beat the non-message-passing Flat+Host baseline across all three reported seeds.
+- Cross-dataset evaluation exposed a severe generalization failure, documented rather than hidden.
 
-A secondary single-seed configuration (`runs/strong_replay_baseline/`, seed 42, `warmup_epochs=2`) achieves **forgetting = 0.0673, accuracy = 0.9172** — same architecture, different `warmup_epochs`. The 3-seed mean is the canonical baseline because it carries an actual variance estimate; the single-seed number is a sensitivity run, not the headline.
+## Benchmark design
 
-## Datasets
+Five NetFlow v2 datasets were evaluated; three contribute to the final task sequence:
 
-Five NetFlow v2 datasets from UQ (https://staff.itee.uq.edu.au/marius/NIDS_datasets/):
+| Dataset | Use |
+|---|---|
+| NF-ToN-IoT-v2 | Included |
+| NF-CSE-CIC-IDS2018-v2 | Included |
+| NF-BoT-IoT-v2 | Included for reconnaissance |
+| NF-UNSW-NB15-v2 | Excluded after task-design revision |
+| NF-UQ-NIDS-v2 | Excluded to avoid double counting the merged union |
 
-| Dataset | Status | Contribution |
-|---|---|---|
-| NF-ToN-IoT-v2 | Used | Scanning, XSS, DDoS, Password, DoS, Injection |
-| NF-CSE-CIC-IDS2018-v2 | Used | DDoS, DoS, Injection, Bot, BruteForce, Infiltration |
-| NF-BoT-IoT-v2 | Used | Reconnaissance only (DDoS/DoS rows excluded) |
-| NF-UNSW-NB15-v2 | Excluded | No surviving class after BoT-IoT reinstated |
-| NF-UQ-NIDS-v2 | Excluded | Merged union — would double-count |
+The final benchmark contains six continual-learning tasks. Benign traffic is sampled separately for each task, and mini-graphs are constructed in capture order with relation-specific forward and reverse edges. See [datasets.md](datasets.md), [attack-class-counts.md](attack-class-counts.md), and [attack-similarity-matrix.md](attack-similarity-matrix.md).
 
-## Continual-learning benchmark
+## Reproducibility map
 
-**6 tasks, 10 attack classes, similarity-driven isolate-and-bundle assignment:**
-
-| Task | Attack classes | Max intra-task cosine sim |
-|---|---|---:|
-| T1 | Scanning | — (isolated) |
-| T2 | Reconnaissance | — (isolated) |
-| T3 | DDoS + Infiltration | -0.462 |
-| T4 | DoS + Injection | -0.343 |
-| T5 | Password + Bot | -0.046 |
-| T6 | XSS + BruteForce | -0.390 |
-
-Benign is present in every task (fresh per-task subset, no cross-task leakage).  
-Step 1 quota-based sampling: each task gets 390K attack + 130K benign rows, waterfilled evenly across classes/datasets.  
-Step 2: mini-graphs of ≤300 flows, chunked in capture order, 11 relations (6 original + 5 reverse).
-
-## Methods evaluated
-
-| Method | Forgetting | Accuracy | Notes |
-|---|---:|---:|---|
-| Fine-tuning (no replay) | 0.693 | 0.364 | Anchor |
-| EWC (relation-aware) | 0.669 | 0.378 | Fisher audit: 97.8% in shared encoder |
-| TRD (distillation) | 0.630–0.689 | 0.363–0.411 | Inverse weighting best; drift null |
-| **Replay (1-layer GNN)** | **0.202** | **0.764** | Strongest |
-| **Flat+Host + replay** | 0.105 | 0.872 | Non-graph baseline |
-| **3-layer GNN + residual + replay** | **0.081** | **0.902** | Beats Flat+Host on all 3 seeds |
-| Joint training (upper bound) | — | 0.876 | Non-continual ceiling |
-
-## Mechanistic findings
-
-1. **EWC is structurally limited** — Fisher mass audit: 97.8% in `shared` encoder (encoders + fusion + classifier), only 2.2% reachable by relation-specific weights. No λ setting helped across 5 orders of magnitude.
-
-2. **1-layer GNN dead gradients** — 40.9% of params (6 non-Flow relations + 4 fusion modules) received zero gradient. Residual connections fix this.
-
-3. **Transferability predicts forgetting on corrected architecture** — `targeted_by` relation: r = -0.960 (higher transferability → less future forgetting).
-
-4. **Replay works by preserving behavior, not parameters** — Full gradient path through entire encoder on replayed data vs. EWC's parameter-space proxy.
-
-5. **Cross-dataset generalization fails** — 0.08% accuracy on unseen-source attacks; confident wrong predictions.
+| Evidence | Location |
+|---|---|
+| Frozen metrics and ablations | [project-metrics.md](project-metrics.md) |
+| Generated results report | [docs/results_final.md](docs/results_final.md) |
+| Dataset and task design | [datasets.md](datasets.md) |
+| Experiment configuration | [configs/](configs/) |
+| Training and analysis code | [src/trench_ids/](src/trench_ids/) |
+| Experiment runners | [scripts/](scripts/) and [run_training.py](run_training.py) |
+| CPU test suite | [tests/](tests/) |
+| Technical supplement | [TRENCH-IDS_Technical_Supplement_FINAL.tex](TRENCH-IDS_Technical_Supplement_FINAL.tex) |
 
 ## Installation
 
-The test suite is CPU-only; the canonical benchmark requires GPU. Two environments are supported:
-
-### Option A — `uv` venv (CPU; for tests and small models)
+Python 3.10 is the documented environment. The test suite can run on CPU; reproducing the headline training runs is intended for a CUDA-capable GPU.
 
 ```bash
 uv venv --python 3.10
 uv pip install -e ".[dev]"
-.venv/Scripts/python.exe -m pytest -q   # 373/373 pass
+.venv/Scripts/python.exe -m pytest -q
 ```
 
-The `uv` venv installs `torch` without CUDA wheels by default. Tests pass in this environment. Full 3-layer training (3 seeds × ~10 min on RTX 3050) will take **10–20× longer on CPU** and is not recommended for reproducing the headline numbers.
+On Linux or macOS, use `.venv/bin/python` instead.
 
-### Option B — base conda (CUDA; for benchmark reproduction)
+## Reproduce the canonical baseline
 
-The headline numbers were produced with `PyTorch 2.14.0+cu130` on an `NVIDIA GeForce RTX 3050 A Laptop GPU` (compute capability 8.9, 4 GB). To use the same environment:
+The full reported baseline consists of three runs with seeds 42, 1, and 2:
 
 ```bash
-conda activate base       # or any env with torch CUDA wheels installed
-cd TRENCH-IDS
-pip install -e .[dev]
-python -m trench_ids.cl.train model.num_layers=3 model.use_residual=true \
-    replay.enabled=true ewc.lambda_r=0 ewc.lambda_s=0 ewc.lambda_u=0 \
-    train.warmup_epochs=1 train.seed=42 paths.out_dir=runs/gnn_3layer_residual_s42
+trench-train \
+  model.num_layers=3 \
+  model.use_residual=true \
+  replay.enabled=true \
+  ewc.lambda_r=0 ewc.lambda_s=0 ewc.lambda_u=0 \
+  train.warmup_epochs=1 \
+  train.seed=42 \
+  paths.out_dir=runs/gnn_3layer_residual_s42
 ```
 
-If you are on a CUDA-less machine, the same command still runs (PyTorch silently falls back to CPU) but takes much longer; the **numbers will still reproduce** because the training loop is deterministic given the seed.
-
-If you prefer to keep the `uv` venv but want CUDA, install the matching CUDA wheel before `pip install -e .`:
-
-```bash
-uv pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/cu130
-uv pip install -e ".[dev]"
-```
-
-**Random seeds:** `train.seed=42|1|2` is the full set used for the headline 3-seed baseline. `seed_everything()` (in `trench_ids/cl/train.py`) seeds `random`, `numpy`, `torch`, and `torch.cuda` together — do not seed only `torch` if you need bit-exact reproduction.
-
-## Running experiments
-
-```bash
-# 3-layer GNN + replay (3 seeds)
-trench-train model.num_layers=3 model.use_residual=true replay.enabled=true ewc.lambda_r=0 ewc.lambda_s=0 ewc.lambda_u=0 train.warmup_epochs=1 train.seed=42 paths.out_dir=runs/gnn_3layer_residual_s42
-trench-train model.num_layers=3 model.use_residual=true replay.enabled=true ewc.lambda_r=0 ewc.lambda_s=0 ewc.lambda_u=0 train.warmup_epochs=1 train.seed=1 paths.out_dir=runs/gnn_3layer_residual_s1
-trench-train model.num_layers=3 model.use_residual=true replay.enabled=true ewc.lambda_r=0 ewc.lambda_s=0 ewc.lambda_u=0 train.warmup_epochs=1 train.seed=2 paths.out_dir=runs/gnn_3layer_residual_s2
-
-# Flat+Host + replay (3 seeds)
-trench-train-flat replay.enabled=true model.use_host_features=true model.mlp_hidden=254 train.seed=42 paths.out_dir=runs/flathost_replay_s42
-trench-train-flat replay.enabled=true model.use_host_features=true model.mlp_hidden=254 train.seed=1 paths.out_dir=runs/flathost_replay_s1
-trench-train-flat replay.enabled=true model.use_host_features=true model.mlp_hidden=254 train.seed=2 paths.out_dir=runs/flathost_replay_s2
-```
-
-## Generate results report
+Repeat with `train.seed=1` and `train.seed=2`, changing `paths.out_dir` accordingly. Generate the consolidated report with:
 
 ```bash
 python -m trench_ids.cl.report --out docs/results_final.md
 ```
 
-## No-Cap Experiment (Robustness Benchmark)
+The published environment used a CUDA-enabled PyTorch build on an NVIDIA RTX 3050 Laptop GPU. CPU execution is supported but substantially slower.
 
-**Purpose**: Evaluate whether the replay result survives when attack-volume capping is removed and natural task-size imbalance returns.
+## No-cap robustness study
 
-### Prerequisites
-- UQ NIDS datasets in `dataset/` with structure:
-  ```
-  dataset/
-    NF-ToN-IoT-v2/data/NF-ToN-IoT-v2.csv
-    NF-CSE-CIC-IDS2018-v2/data/NF-CSE-CIC-IDS2018-v2.csv
-    NF-BoT-IoT-v2/data/NF-BoT-IoT-v2.csv
-  ```
-- GPU with ≥8 GB VRAM recommended (67K graphs, batch_size=1–2)
+The `configs/no-cap/` and `scripts/run_no_cap.py` paths define a separate robustness study that removes the main benchmarkâ€™s per-task attack-volume cap. It does **not** replace the frozen canonical baseline above.
 
-### Run Full Pipeline
 ```bash
-# Step 1: Preprocess (all attack rows, no quota cap)
-conda run -n base python -m trench_ids.preprocess_no_cap --config configs/no-cap/preprocess.yaml
-
-# Step 2: Graph construction (67,274 graphs, no downsampling)
-conda run -n base python -m trench_ids.graphs --config configs/no-cap/graph.yaml
-
-# Step 3: Training (4 phases × 3 seeds = 12 runs)
+conda run -n base python -m trench_ids.preprocess_no_cap \
+  --config configs/no-cap/preprocess.yaml
+conda run -n base python -m trench_ids.graphs \
+  --config configs/no-cap/graph.yaml
 conda run -n base python scripts/run_no_cap.py --phase train
 ```
 
-### Expected Outputs
-- `data/no-cap/processed/task_{1..6}.parquet` + `manifest.json`
-- `data/no-cap/graphs/task_{t}_{split}.pt` + `graph_counts.json` (67,274 graphs)
-- `runs/no-cap/gnn_finetune_s{42,1,2}/summary.json`
-- `runs/no-cap/gnn_replay_s{42,1,2}/summary.json`
-- `runs/no-cap/gnn_ewc_s{42,1,2}/summary.json`
-- `runs/no-cap/gnn_trd_transfer_s{42,1,2}/summary.json`
+The no-cap study has materially larger task sizes and different replay proportions. Compare it only within the assumptions recorded in its configuration and validation artifacts.
 
-### Key Differences from Main Benchmark
-| Aspect | Main (Capped) | No-Cap |
-|--------|---------------|--------|
-| Attack rows/task | 390K (quota) | All available |
-| Task sizes | 520K each (1.0×) | 1.7M–5.0M (2.9× imbalance) |
-| T2 benign ratio | 3:1 (exact) | 19.4:1 (pool exhausted) |
-| Total graphs | 10,402 | 67,274 |
-| Replay proportion | 16.5% of train | 1.2–3.4% of train |
-
-## Test suite
+## Tests
 
 ```bash
-.venv/Scripts/python.exe -m pytest -q
-# 373 tests passing (CPU .venv is sufficient for the suite; PyTorch CUDA is not required)
+pytest -q
 ```
 
-## Final experimental state
+The repositoryâ€™s recorded frozen state reports 373 CPU tests. Treat that as a project artifact rather than a guarantee about an unverified environment; run the suite locally before extending the benchmark.
 
-The benchmark is frozen at `v1.0.0-experiments` (existing git tag). No further experiments are planned; further changes belong to the paper write-up.
+## Status
 
-- Headline results: `project-metrics.md`
-- Complete run directory tree: `runs/`
-- Per-class and per-task F1 for each arm: `docs/results_final.md` (regenerable with `python -m trench_ids.cl.report --out docs/results_final.md`)
-- Pipeline metrics and methodology: `project-metrics.md`, `CLAUDE.md`
+The main benchmark is frozen at the existing `v1.0.0-experiments` tag. Further changes should preserve the recorded experimental evidence and clearly distinguish new studies from the canonical result.
+
